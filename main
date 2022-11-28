@@ -1,0 +1,57 @@
+import pandas as pd
+import numpy as np
+import matplotlib as pyplot
+import matplotlib.pyplot as plt
+import seaborn as sns
+col_df=['POSTED_BY', 'UNDER_CONSTRUCTION', 'RERA', 'BHK_NO.', 'BHK_OR_RK', 'SQUARE_FT','READYTOMOVE','RESALE','ADDRESS','LONGITUDE', 'LATITUDE']
+user_df = []
+for i in range(11):
+  user_input = input('Введите'+col_df[i])
+  user_df.append(user_input)
+row = pd.Series(user_df)
+user_df = pd.DataFrame([row])
+user_df.columns = col_df
+
+train = pd.read_csv('/content/sample_data/Train.csv')
+
+train['BHK_OR_RK']=train['BHK_OR_RK'].replace({'BHK':0,'RK':1})
+train['POSTED_BY']=train['POSTED_BY'].replace({'Owner':0,'Dealer':1,'Builder':2})
+
+duplicateRows = train[train.duplicated()]
+train.drop_duplicates(keep = False, inplace = True,ignore_index=True) 
+
+
+train['sq_per_room']=train['SQUARE_FT']/train['BHK_NO.']
+
+def city(address):
+ city_name=address.split(',')[-1]
+ return city_name
+ 
+def locality(address):
+ locality=address.split(',')[-2]
+ return locality
+train['loc']=train['ADDRESS'].apply(lambda x : locality(x))
+train['City']=train['ADDRESS'].apply(lambda x : city(x))
+
+everage = train.groupby('City')['TARGET(PRICE_IN_LACS)'].mean()
+train['City_mean']= train.City.map(everage)
+
+col=['POSTED_BY', 'UNDER_CONSTRUCTION', 'RERA', 'BHK_NO.', 'BHK_OR_RK', 'SQUARE_FT','LONGITUDE', 'LATITUDE', 'RESALE','City_mean','sq_per_room']
+
+train['TARGET_log']=np.log1p(train['TARGET(PRICE_IN_LACS)'])
+
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from lightgbm import LGBMRegressor
+
+X_train, X_val = train_test_split(train, test_size=0.25, random_state=20000,shuffle=True)
+
+lgbcl = LGBMRegressor(n_estimators=1000, importance_type='gain')
+lgbcl= lgbcl.fit(X_train[col],X_train['TARGET_log'],categorical_feature=cat_col,eval_set=(X_val[col],X_val['TARGET_log']),verbose=100,early_stopping_rounds=200)
+y_predict = lgbcl.predict(X_val[col])
+np.sqrt(mean_squared_error(X_val['TARGET_log'],y_predict))
+
+lgbcl= lgbcl.fit(train[col], train['TARGET_log'])
+
+lgb_pred = lgbcl.predict(user_df)
+print(lgb_pred)
